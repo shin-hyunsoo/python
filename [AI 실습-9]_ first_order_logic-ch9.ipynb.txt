@@ -1,0 +1,1108 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# First-Order Logic"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This Jupyter notebook acts as supporting material for topics covered in __Chapter 6 Logical Agents__, __Chapter 7 First-Order Logic__ and __Chapter 8 Inference in First-Order Logic__ of the book *[Artificial Intelligence: A Modern Approach](http://aima.cs.berkeley.edu)*. We make use of the implementations in the [logic.py](https://github.com/aimacode/aima-python/blob/master/logic.py) module. See the [intro notebook](https://github.com/aimacode/aima-python/blob/master/intro.ipynb) for instructions.\n",
+    "\n",
+    "Let's first import everything from the `logic` module."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from utils import *\n",
+    "from logic import *\n",
+    "from notebook import psource"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## CONTENTS\n",
+    "- Logical sentences\n",
+    "    - FolKB\n",
+    "    - Inference in first order knowledge base\n",
+    "        - Unification\n",
+    "        - Forward chaining algorithm\n",
+    "        - Backward chaining algorithm"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## First-Order Logic Knowledge Bases: `FolKB`\n",
+    "\n",
+    "The class `FolKB` can be used to represent a knowledge base of First-order logic sentences. You would initialize and use it the same way as you would for `PropKB` except that the clauses are first-order definite clauses. We will see how to write such clauses to create a database and query them in the following sections."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Criminal KB\n",
+    "In this section we create a `FolKB` based on the following paragraph.<br/>\n",
+    "<em>The law says that it is a crime for an American to sell weapons to hostile nations. The country Nono, an enemy of America, has some missiles, and all of its missiles were sold to it by Colonel West, who is American.</em><br/>\n",
+    "The first step is to extract the facts and convert them into first-order definite clauses. Extracting the facts from data alone is a challenging task. Fortunately, we have a small paragraph and can do extraction and conversion manually. We'll store the clauses in list aptly named `clauses`."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clauses = []"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<em>“... it is a crime for an American to sell weapons to hostile nations”</em><br/>\n",
+    "The keywords to look for here are 'crime', 'American', 'sell', 'weapon' and 'hostile'. We use predicate symbols to make meaning of them.\n",
+    "\n",
+    "* `Criminal(x)`: `x` is a criminal\n",
+    "* `American(x)`: `x` is an American\n",
+    "* `Sells(x ,y, z)`: `x` sells `y` to `z`\n",
+    "* `Weapon(x)`: `x` is a weapon\n",
+    "* `Hostile(x)`: `x` is a hostile nation\n",
+    "\n",
+    "Let us now combine them with appropriate variable naming to depict the meaning of the sentence. The criminal `x` is also the American `x` who sells weapon `y` to `z`, which is a hostile nation.\n",
+    "\n",
+    "$\\text{American}(x) \\land \\text{Weapon}(y) \\land \\text{Sells}(x, y, z) \\land \\text{Hostile}(z) \\implies \\text{Criminal} (x)$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clauses.append(expr(\"(American(x) & Weapon(y) & Sells(x, y, z) & Hostile(z)) ==> Criminal(x)\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<em>\"The country Nono, an enemy of America\"</em><br/>\n",
+    "We now know that Nono is an enemy of America. We represent these nations using the constant symbols `Nono` and `America`. the enemy relation is show using the predicate symbol `Enemy`.\n",
+    "\n",
+    "$\\text{Enemy}(\\text{Nono}, \\text{America})$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clauses.append(expr(\"Enemy(Nono, America)\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<em>\"Nono ... has some missiles\"</em><br/>\n",
+    "This states the existence of some missile which is owned by Nono. $\\exists x \\text{Owns}(\\text{Nono}, x) \\land \\text{Missile}(x)$. We invoke existential instantiation to introduce a new constant `M1` which is the missile owned by Nono.\n",
+    "\n",
+    "$\\text{Owns}(\\text{Nono}, \\text{M1}), \\text{Missile}(\\text{M1})$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clauses.append(expr(\"Owns(Nono, M1)\"))\n",
+    "clauses.append(expr(\"Missile(M1)\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<em>\"All of its missiles were sold to it by Colonel West\"</em><br/>\n",
+    "If Nono owns something and it classifies as a missile, then it was sold to Nono by West.\n",
+    "\n",
+    "$\\text{Missile}(x) \\land \\text{Owns}(\\text{Nono}, x) \\implies \\text{Sells}(\\text{West}, x, \\text{Nono})$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clauses.append(expr(\"(Missile(x) & Owns(Nono, x)) ==> Sells(West, x, Nono)\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<em>\"West, who is American\"</em><br/>\n",
+    "West is an American.\n",
+    "\n",
+    "$\\text{American}(\\text{West})$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clauses.append(expr(\"American(West)\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We also know, from our understanding of language, that missiles are weapons and that an enemy of America counts as “hostile”.\n",
+    "\n",
+    "$\\text{Missile}(x) \\implies \\text{Weapon}(x), \\text{Enemy}(x, \\text{America}) \\implies \\text{Hostile}(x)$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clauses.append(expr(\"Missile(x) ==> Weapon(x)\"))\n",
+    "clauses.append(expr(\"Enemy(x, America) ==> Hostile(x)\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now that we have converted the information into first-order definite clauses we can create our first-order logic knowledge base."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "crime_kb = FolKB(clauses)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The `subst` helper function substitutes variables with given values in first-order logic statements.\n",
+    "This will be useful in later algorithms.\n",
+    "It's implementation is quite simple and self-explanatory."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\"\n",
+       "   \"http://www.w3.org/TR/html4/strict.dtd\">\n",
+       "<!--\n",
+       "generated by Pygments <http://pygments.org>\n",
+       "Copyright 2006-2019 by the Pygments team.\n",
+       "Licensed under the BSD license, see LICENSE for details.\n",
+       "-->\n",
+       "<html>\n",
+       "<head>\n",
+       "  <title></title>\n",
+       "  <meta http-equiv=\"content-type\" content=\"text/html; charset=None\">\n",
+       "  <style type=\"text/css\">\n",
+       "/*\n",
+       "generated by Pygments <http://pygments.org>\n",
+       "Copyright 2006-2019 by the Pygments team.\n",
+       "Licensed under the BSD license, see LICENSE for details.\n",
+       "*/\n",
+       "td.linenos { background-color: #f0f0f0; padding-right: 10px; }\n",
+       "span.lineno { background-color: #f0f0f0; padding: 0 5px 0 5px; }\n",
+       "pre { line-height: 125%; }\n",
+       "body .hll { background-color: #ffffcc }\n",
+       "body  { background: #f8f8f8; }\n",
+       "body .c { color: #408080; font-style: italic } /* Comment */\n",
+       "body .err { border: 1px solid #FF0000 } /* Error */\n",
+       "body .k { color: #008000; font-weight: bold } /* Keyword */\n",
+       "body .o { color: #666666 } /* Operator */\n",
+       "body .ch { color: #408080; font-style: italic } /* Comment.Hashbang */\n",
+       "body .cm { color: #408080; font-style: italic } /* Comment.Multiline */\n",
+       "body .cp { color: #BC7A00 } /* Comment.Preproc */\n",
+       "body .cpf { color: #408080; font-style: italic } /* Comment.PreprocFile */\n",
+       "body .c1 { color: #408080; font-style: italic } /* Comment.Single */\n",
+       "body .cs { color: #408080; font-style: italic } /* Comment.Special */\n",
+       "body .gd { color: #A00000 } /* Generic.Deleted */\n",
+       "body .ge { font-style: italic } /* Generic.Emph */\n",
+       "body .gr { color: #FF0000 } /* Generic.Error */\n",
+       "body .gh { color: #000080; font-weight: bold } /* Generic.Heading */\n",
+       "body .gi { color: #00A000 } /* Generic.Inserted */\n",
+       "body .go { color: #888888 } /* Generic.Output */\n",
+       "body .gp { color: #000080; font-weight: bold } /* Generic.Prompt */\n",
+       "body .gs { font-weight: bold } /* Generic.Strong */\n",
+       "body .gu { color: #800080; font-weight: bold } /* Generic.Subheading */\n",
+       "body .gt { color: #0044DD } /* Generic.Traceback */\n",
+       "body .kc { color: #008000; font-weight: bold } /* Keyword.Constant */\n",
+       "body .kd { color: #008000; font-weight: bold } /* Keyword.Declaration */\n",
+       "body .kn { color: #008000; font-weight: bold } /* Keyword.Namespace */\n",
+       "body .kp { color: #008000 } /* Keyword.Pseudo */\n",
+       "body .kr { color: #008000; font-weight: bold } /* Keyword.Reserved */\n",
+       "body .kt { color: #B00040 } /* Keyword.Type */\n",
+       "body .m { color: #666666 } /* Literal.Number */\n",
+       "body .s { color: #BA2121 } /* Literal.String */\n",
+       "body .na { color: #7D9029 } /* Name.Attribute */\n",
+       "body .nb { color: #008000 } /* Name.Builtin */\n",
+       "body .nc { color: #0000FF; font-weight: bold } /* Name.Class */\n",
+       "body .no { color: #880000 } /* Name.Constant */\n",
+       "body .nd { color: #AA22FF } /* Name.Decorator */\n",
+       "body .ni { color: #999999; font-weight: bold } /* Name.Entity */\n",
+       "body .ne { color: #D2413A; font-weight: bold } /* Name.Exception */\n",
+       "body .nf { color: #0000FF } /* Name.Function */\n",
+       "body .nl { color: #A0A000 } /* Name.Label */\n",
+       "body .nn { color: #0000FF; font-weight: bold } /* Name.Namespace */\n",
+       "body .nt { color: #008000; font-weight: bold } /* Name.Tag */\n",
+       "body .nv { color: #19177C } /* Name.Variable */\n",
+       "body .ow { color: #AA22FF; font-weight: bold } /* Operator.Word */\n",
+       "body .w { color: #bbbbbb } /* Text.Whitespace */\n",
+       "body .mb { color: #666666 } /* Literal.Number.Bin */\n",
+       "body .mf { color: #666666 } /* Literal.Number.Float */\n",
+       "body .mh { color: #666666 } /* Literal.Number.Hex */\n",
+       "body .mi { color: #666666 } /* Literal.Number.Integer */\n",
+       "body .mo { color: #666666 } /* Literal.Number.Oct */\n",
+       "body .sa { color: #BA2121 } /* Literal.String.Affix */\n",
+       "body .sb { color: #BA2121 } /* Literal.String.Backtick */\n",
+       "body .sc { color: #BA2121 } /* Literal.String.Char */\n",
+       "body .dl { color: #BA2121 } /* Literal.String.Delimiter */\n",
+       "body .sd { color: #BA2121; font-style: italic } /* Literal.String.Doc */\n",
+       "body .s2 { color: #BA2121 } /* Literal.String.Double */\n",
+       "body .se { color: #BB6622; font-weight: bold } /* Literal.String.Escape */\n",
+       "body .sh { color: #BA2121 } /* Literal.String.Heredoc */\n",
+       "body .si { color: #BB6688; font-weight: bold } /* Literal.String.Interpol */\n",
+       "body .sx { color: #008000 } /* Literal.String.Other */\n",
+       "body .sr { color: #BB6688 } /* Literal.String.Regex */\n",
+       "body .s1 { color: #BA2121 } /* Literal.String.Single */\n",
+       "body .ss { color: #19177C } /* Literal.String.Symbol */\n",
+       "body .bp { color: #008000 } /* Name.Builtin.Pseudo */\n",
+       "body .fm { color: #0000FF } /* Name.Function.Magic */\n",
+       "body .vc { color: #19177C } /* Name.Variable.Class */\n",
+       "body .vg { color: #19177C } /* Name.Variable.Global */\n",
+       "body .vi { color: #19177C } /* Name.Variable.Instance */\n",
+       "body .vm { color: #19177C } /* Name.Variable.Magic */\n",
+       "body .il { color: #666666 } /* Literal.Number.Integer.Long */\n",
+       "\n",
+       "  </style>\n",
+       "</head>\n",
+       "<body>\n",
+       "<h2></h2>\n",
+       "\n",
+       "<div class=\"highlight\"><pre><span></span><span class=\"k\">def</span> <span class=\"nf\">subst</span><span class=\"p\">(</span><span class=\"n\">s</span><span class=\"p\">,</span> <span class=\"n\">x</span><span class=\"p\">):</span>\n",
+       "    <span class=\"sd\">&quot;&quot;&quot;Substitute the substitution s into the expression x.</span>\n",
+       "<span class=\"sd\">    &gt;&gt;&gt; subst({x: 42, y:0}, F(x) + y)</span>\n",
+       "<span class=\"sd\">    (F(42) + 0)</span>\n",
+       "<span class=\"sd\">    &quot;&quot;&quot;</span>\n",
+       "    <span class=\"k\">if</span> <span class=\"nb\">isinstance</span><span class=\"p\">(</span><span class=\"n\">x</span><span class=\"p\">,</span> <span class=\"nb\">list</span><span class=\"p\">):</span>\n",
+       "        <span class=\"k\">return</span> <span class=\"p\">[</span><span class=\"n\">subst</span><span class=\"p\">(</span><span class=\"n\">s</span><span class=\"p\">,</span> <span class=\"n\">xi</span><span class=\"p\">)</span> <span class=\"k\">for</span> <span class=\"n\">xi</span> <span class=\"ow\">in</span> <span class=\"n\">x</span><span class=\"p\">]</span>\n",
+       "    <span class=\"k\">elif</span> <span class=\"nb\">isinstance</span><span class=\"p\">(</span><span class=\"n\">x</span><span class=\"p\">,</span> <span class=\"nb\">tuple</span><span class=\"p\">):</span>\n",
+       "        <span class=\"k\">return</span> <span class=\"nb\">tuple</span><span class=\"p\">([</span><span class=\"n\">subst</span><span class=\"p\">(</span><span class=\"n\">s</span><span class=\"p\">,</span> <span class=\"n\">xi</span><span class=\"p\">)</span> <span class=\"k\">for</span> <span class=\"n\">xi</span> <span class=\"ow\">in</span> <span class=\"n\">x</span><span class=\"p\">])</span>\n",
+       "    <span class=\"k\">elif</span> <span class=\"ow\">not</span> <span class=\"nb\">isinstance</span><span class=\"p\">(</span><span class=\"n\">x</span><span class=\"p\">,</span> <span class=\"n\">Expr</span><span class=\"p\">):</span>\n",
+       "        <span class=\"k\">return</span> <span class=\"n\">x</span>\n",
+       "    <span class=\"k\">elif</span> <span class=\"n\">is_var_symbol</span><span class=\"p\">(</span><span class=\"n\">x</span><span class=\"o\">.</span><span class=\"n\">op</span><span class=\"p\">):</span>\n",
+       "        <span class=\"k\">return</span> <span class=\"n\">s</span><span class=\"o\">.</span><span class=\"n\">get</span><span class=\"p\">(</span><span class=\"n\">x</span><span class=\"p\">,</span> <span class=\"n\">x</span><span class=\"p\">)</span>\n",
+       "    <span class=\"k\">else</span><span class=\"p\">:</span>\n",
+       "        <span class=\"k\">return</span> <span class=\"n\">Expr</span><span class=\"p\">(</span><span class=\"n\">x</span><span class=\"o\">.</span><span class=\"n\">op</span><span class=\"p\">,</span> <span class=\"o\">*</span><span class=\"p\">[</span><span class=\"n\">subst</span><span class=\"p\">(</span><span class=\"n\">s</span><span class=\"p\">,</span> <span class=\"n\">arg</span><span class=\"p\">)</span> <span class=\"k\">for</span> <span class=\"n\">arg</span> <span class=\"ow\">in</span> <span class=\"n\">x</span><span class=\"o\">.</span><span class=\"n\">args</span><span class=\"p\">])</span>\n",
+       "</pre></div>\n",
+       "</body>\n",
+       "</html>\n"
+      ],
+      "text/plain": [
+       "<IPython.core.display.HTML object>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "psource(subst)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Here's an example of how `subst` can be used."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "Owns(Nono, M1)"
+      ]
+     },
+     "execution_count": 11,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "subst({x: expr('Nono'), y: expr('M1')}, expr('Owns(x, y)'))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Inference in First-Order Logic\n",
+    "In this section we look at a forward chaining and a backward chaining algorithm for `FolKB`. Both aforementioned algorithms rely on a process called <strong>unification</strong>, a key component of all first-order inference algorithms."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Unification\n",
+    "We sometimes require finding substitutions that make different logical expressions look identical. This process, called unification, is done by the `unify` algorithm. It takes as input two sentences and returns a <em>unifier</em> for them if one exists. A unifier is a dictionary which stores the substitutions required to make the two sentences identical. It does so by recursively unifying the components of a sentence, where the unification of a variable symbol `var` with a constant symbol `Const` is the mapping `{var: Const}`. Let's look at a few examples."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{x: 3}"
+      ]
+     },
+     "execution_count": 12,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "unify(expr('x'), 3)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{x: B}"
+      ]
+     },
+     "execution_count": 13,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "unify(expr('A(x)'), expr('A(B)'))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{x: Bella, y: Dobby}"
+      ]
+     },
+     "execution_count": 14,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "unify(expr('Cat(x) & Dog(Dobby)'), expr('Cat(Bella) & Dog(y)'))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "In cases where there is no possible substitution that unifies the two sentences the function return `None`."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "None\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(unify(expr('Cat(x)'), expr('Dog(Dobby)')))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We also need to take care we do not unintentionally use the same variable name. Unify treats them as a single variable which prevents it from taking multiple value."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "None\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(unify(expr('Cat(x) & Dog(Dobby)'), expr('Cat(Bella) & Dog(x)')))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Forward Chaining Algorithm\n",
+    "We consider the simple forward-chaining algorithm presented in <em>Figure 9.3</em>. We look at each rule in the knowledge base and see if the premises can be satisfied. This is done by finding a substitution which unifies each of the premise with a clause in the `KB`. If we are able to unify the premises, the conclusion (with the corresponding substitution) is added to the `KB`. This inferencing process is repeated until either the query can be answered or till no new sentences can be added. We test if the newly added clause unifies with the query in which case the substitution yielded by `unify` is an answer to the query. If we run out of sentences to infer, this means the query was a failure.\n",
+    "\n",
+    "The function `fol_fc_ask` is a generator which yields all substitutions which validate the query."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\"\n",
+       "   \"http://www.w3.org/TR/html4/strict.dtd\">\n",
+       "<!--\n",
+       "generated by Pygments <http://pygments.org>\n",
+       "Copyright 2006-2019 by the Pygments team.\n",
+       "Licensed under the BSD license, see LICENSE for details.\n",
+       "-->\n",
+       "<html>\n",
+       "<head>\n",
+       "  <title></title>\n",
+       "  <meta http-equiv=\"content-type\" content=\"text/html; charset=None\">\n",
+       "  <style type=\"text/css\">\n",
+       "/*\n",
+       "generated by Pygments <http://pygments.org>\n",
+       "Copyright 2006-2019 by the Pygments team.\n",
+       "Licensed under the BSD license, see LICENSE for details.\n",
+       "*/\n",
+       "td.linenos { background-color: #f0f0f0; padding-right: 10px; }\n",
+       "span.lineno { background-color: #f0f0f0; padding: 0 5px 0 5px; }\n",
+       "pre { line-height: 125%; }\n",
+       "body .hll { background-color: #ffffcc }\n",
+       "body  { background: #f8f8f8; }\n",
+       "body .c { color: #408080; font-style: italic } /* Comment */\n",
+       "body .err { border: 1px solid #FF0000 } /* Error */\n",
+       "body .k { color: #008000; font-weight: bold } /* Keyword */\n",
+       "body .o { color: #666666 } /* Operator */\n",
+       "body .ch { color: #408080; font-style: italic } /* Comment.Hashbang */\n",
+       "body .cm { color: #408080; font-style: italic } /* Comment.Multiline */\n",
+       "body .cp { color: #BC7A00 } /* Comment.Preproc */\n",
+       "body .cpf { color: #408080; font-style: italic } /* Comment.PreprocFile */\n",
+       "body .c1 { color: #408080; font-style: italic } /* Comment.Single */\n",
+       "body .cs { color: #408080; font-style: italic } /* Comment.Special */\n",
+       "body .gd { color: #A00000 } /* Generic.Deleted */\n",
+       "body .ge { font-style: italic } /* Generic.Emph */\n",
+       "body .gr { color: #FF0000 } /* Generic.Error */\n",
+       "body .gh { color: #000080; font-weight: bold } /* Generic.Heading */\n",
+       "body .gi { color: #00A000 } /* Generic.Inserted */\n",
+       "body .go { color: #888888 } /* Generic.Output */\n",
+       "body .gp { color: #000080; font-weight: bold } /* Generic.Prompt */\n",
+       "body .gs { font-weight: bold } /* Generic.Strong */\n",
+       "body .gu { color: #800080; font-weight: bold } /* Generic.Subheading */\n",
+       "body .gt { color: #0044DD } /* Generic.Traceback */\n",
+       "body .kc { color: #008000; font-weight: bold } /* Keyword.Constant */\n",
+       "body .kd { color: #008000; font-weight: bold } /* Keyword.Declaration */\n",
+       "body .kn { color: #008000; font-weight: bold } /* Keyword.Namespace */\n",
+       "body .kp { color: #008000 } /* Keyword.Pseudo */\n",
+       "body .kr { color: #008000; font-weight: bold } /* Keyword.Reserved */\n",
+       "body .kt { color: #B00040 } /* Keyword.Type */\n",
+       "body .m { color: #666666 } /* Literal.Number */\n",
+       "body .s { color: #BA2121 } /* Literal.String */\n",
+       "body .na { color: #7D9029 } /* Name.Attribute */\n",
+       "body .nb { color: #008000 } /* Name.Builtin */\n",
+       "body .nc { color: #0000FF; font-weight: bold } /* Name.Class */\n",
+       "body .no { color: #880000 } /* Name.Constant */\n",
+       "body .nd { color: #AA22FF } /* Name.Decorator */\n",
+       "body .ni { color: #999999; font-weight: bold } /* Name.Entity */\n",
+       "body .ne { color: #D2413A; font-weight: bold } /* Name.Exception */\n",
+       "body .nf { color: #0000FF } /* Name.Function */\n",
+       "body .nl { color: #A0A000 } /* Name.Label */\n",
+       "body .nn { color: #0000FF; font-weight: bold } /* Name.Namespace */\n",
+       "body .nt { color: #008000; font-weight: bold } /* Name.Tag */\n",
+       "body .nv { color: #19177C } /* Name.Variable */\n",
+       "body .ow { color: #AA22FF; font-weight: bold } /* Operator.Word */\n",
+       "body .w { color: #bbbbbb } /* Text.Whitespace */\n",
+       "body .mb { color: #666666 } /* Literal.Number.Bin */\n",
+       "body .mf { color: #666666 } /* Literal.Number.Float */\n",
+       "body .mh { color: #666666 } /* Literal.Number.Hex */\n",
+       "body .mi { color: #666666 } /* Literal.Number.Integer */\n",
+       "body .mo { color: #666666 } /* Literal.Number.Oct */\n",
+       "body .sa { color: #BA2121 } /* Literal.String.Affix */\n",
+       "body .sb { color: #BA2121 } /* Literal.String.Backtick */\n",
+       "body .sc { color: #BA2121 } /* Literal.String.Char */\n",
+       "body .dl { color: #BA2121 } /* Literal.String.Delimiter */\n",
+       "body .sd { color: #BA2121; font-style: italic } /* Literal.String.Doc */\n",
+       "body .s2 { color: #BA2121 } /* Literal.String.Double */\n",
+       "body .se { color: #BB6622; font-weight: bold } /* Literal.String.Escape */\n",
+       "body .sh { color: #BA2121 } /* Literal.String.Heredoc */\n",
+       "body .si { color: #BB6688; font-weight: bold } /* Literal.String.Interpol */\n",
+       "body .sx { color: #008000 } /* Literal.String.Other */\n",
+       "body .sr { color: #BB6688 } /* Literal.String.Regex */\n",
+       "body .s1 { color: #BA2121 } /* Literal.String.Single */\n",
+       "body .ss { color: #19177C } /* Literal.String.Symbol */\n",
+       "body .bp { color: #008000 } /* Name.Builtin.Pseudo */\n",
+       "body .fm { color: #0000FF } /* Name.Function.Magic */\n",
+       "body .vc { color: #19177C } /* Name.Variable.Class */\n",
+       "body .vg { color: #19177C } /* Name.Variable.Global */\n",
+       "body .vi { color: #19177C } /* Name.Variable.Instance */\n",
+       "body .vm { color: #19177C } /* Name.Variable.Magic */\n",
+       "body .il { color: #666666 } /* Literal.Number.Integer.Long */\n",
+       "\n",
+       "  </style>\n",
+       "</head>\n",
+       "<body>\n",
+       "<h2></h2>\n",
+       "\n",
+       "<div class=\"highlight\"><pre><span></span><span class=\"k\">def</span> <span class=\"nf\">fol_fc_ask</span><span class=\"p\">(</span><span class=\"n\">kb</span><span class=\"p\">,</span> <span class=\"n\">alpha</span><span class=\"p\">):</span>\n",
+       "    <span class=\"sd\">&quot;&quot;&quot;</span>\n",
+       "<span class=\"sd\">    [Figure 9.3]</span>\n",
+       "<span class=\"sd\">    A simple forward-chaining algorithm.</span>\n",
+       "<span class=\"sd\">    &quot;&quot;&quot;</span>\n",
+       "    <span class=\"c1\"># TODO: improve efficiency</span>\n",
+       "    <span class=\"n\">kb_consts</span> <span class=\"o\">=</span> <span class=\"nb\">list</span><span class=\"p\">({</span><span class=\"n\">c</span> <span class=\"k\">for</span> <span class=\"n\">clause</span> <span class=\"ow\">in</span> <span class=\"n\">kb</span><span class=\"o\">.</span><span class=\"n\">clauses</span> <span class=\"k\">for</span> <span class=\"n\">c</span> <span class=\"ow\">in</span> <span class=\"n\">constant_symbols</span><span class=\"p\">(</span><span class=\"n\">clause</span><span class=\"p\">)})</span>\n",
+       "\n",
+       "    <span class=\"k\">def</span> <span class=\"nf\">enum_subst</span><span class=\"p\">(</span><span class=\"n\">p</span><span class=\"p\">):</span>\n",
+       "        <span class=\"n\">query_vars</span> <span class=\"o\">=</span> <span class=\"nb\">list</span><span class=\"p\">({</span><span class=\"n\">v</span> <span class=\"k\">for</span> <span class=\"n\">clause</span> <span class=\"ow\">in</span> <span class=\"n\">p</span> <span class=\"k\">for</span> <span class=\"n\">v</span> <span class=\"ow\">in</span> <span class=\"n\">variables</span><span class=\"p\">(</span><span class=\"n\">clause</span><span class=\"p\">)})</span>\n",
+       "        <span class=\"k\">for</span> <span class=\"n\">assignment_list</span> <span class=\"ow\">in</span> <span class=\"n\">itertools</span><span class=\"o\">.</span><span class=\"n\">product</span><span class=\"p\">(</span><span class=\"n\">kb_consts</span><span class=\"p\">,</span> <span class=\"n\">repeat</span><span class=\"o\">=</span><span class=\"nb\">len</span><span class=\"p\">(</span><span class=\"n\">query_vars</span><span class=\"p\">)):</span>\n",
+       "            <span class=\"n\">theta</span> <span class=\"o\">=</span> <span class=\"p\">{</span><span class=\"n\">x</span><span class=\"p\">:</span> <span class=\"n\">y</span> <span class=\"k\">for</span> <span class=\"n\">x</span><span class=\"p\">,</span> <span class=\"n\">y</span> <span class=\"ow\">in</span> <span class=\"nb\">zip</span><span class=\"p\">(</span><span class=\"n\">query_vars</span><span class=\"p\">,</span> <span class=\"n\">assignment_list</span><span class=\"p\">)}</span>\n",
+       "            <span class=\"k\">yield</span> <span class=\"n\">theta</span>\n",
+       "\n",
+       "    <span class=\"c1\"># check if we can answer without new inferences</span>\n",
+       "    <span class=\"k\">for</span> <span class=\"n\">q</span> <span class=\"ow\">in</span> <span class=\"n\">kb</span><span class=\"o\">.</span><span class=\"n\">clauses</span><span class=\"p\">:</span>\n",
+       "        <span class=\"n\">phi</span> <span class=\"o\">=</span> <span class=\"n\">unify_mm</span><span class=\"p\">(</span><span class=\"n\">q</span><span class=\"p\">,</span> <span class=\"n\">alpha</span><span class=\"p\">)</span>\n",
+       "        <span class=\"k\">if</span> <span class=\"n\">phi</span> <span class=\"ow\">is</span> <span class=\"ow\">not</span> <span class=\"bp\">None</span><span class=\"p\">:</span>\n",
+       "            <span class=\"k\">yield</span> <span class=\"n\">phi</span>\n",
+       "\n",
+       "    <span class=\"k\">while</span> <span class=\"bp\">True</span><span class=\"p\">:</span>\n",
+       "        <span class=\"n\">new</span> <span class=\"o\">=</span> <span class=\"p\">[]</span>\n",
+       "        <span class=\"k\">for</span> <span class=\"n\">rule</span> <span class=\"ow\">in</span> <span class=\"n\">kb</span><span class=\"o\">.</span><span class=\"n\">clauses</span><span class=\"p\">:</span>\n",
+       "            <span class=\"n\">p</span><span class=\"p\">,</span> <span class=\"n\">q</span> <span class=\"o\">=</span> <span class=\"n\">parse_definite_clause</span><span class=\"p\">(</span><span class=\"n\">rule</span><span class=\"p\">)</span>\n",
+       "            <span class=\"k\">for</span> <span class=\"n\">theta</span> <span class=\"ow\">in</span> <span class=\"n\">enum_subst</span><span class=\"p\">(</span><span class=\"n\">p</span><span class=\"p\">):</span>\n",
+       "                <span class=\"k\">if</span> <span class=\"nb\">set</span><span class=\"p\">(</span><span class=\"n\">subst</span><span class=\"p\">(</span><span class=\"n\">theta</span><span class=\"p\">,</span> <span class=\"n\">p</span><span class=\"p\">))</span><span class=\"o\">.</span><span class=\"n\">issubset</span><span class=\"p\">(</span><span class=\"nb\">set</span><span class=\"p\">(</span><span class=\"n\">kb</span><span class=\"o\">.</span><span class=\"n\">clauses</span><span class=\"p\">)):</span>\n",
+       "                    <span class=\"n\">q_</span> <span class=\"o\">=</span> <span class=\"n\">subst</span><span class=\"p\">(</span><span class=\"n\">theta</span><span class=\"p\">,</span> <span class=\"n\">q</span><span class=\"p\">)</span>\n",
+       "                    <span class=\"k\">if</span> <span class=\"nb\">all</span><span class=\"p\">([</span><span class=\"n\">unify_mm</span><span class=\"p\">(</span><span class=\"n\">x</span><span class=\"p\">,</span> <span class=\"n\">q_</span><span class=\"p\">)</span> <span class=\"ow\">is</span> <span class=\"bp\">None</span> <span class=\"k\">for</span> <span class=\"n\">x</span> <span class=\"ow\">in</span> <span class=\"n\">kb</span><span class=\"o\">.</span><span class=\"n\">clauses</span> <span class=\"o\">+</span> <span class=\"n\">new</span><span class=\"p\">]):</span>\n",
+       "                        <span class=\"n\">new</span><span class=\"o\">.</span><span class=\"n\">append</span><span class=\"p\">(</span><span class=\"n\">q_</span><span class=\"p\">)</span>\n",
+       "                        <span class=\"n\">phi</span> <span class=\"o\">=</span> <span class=\"n\">unify_mm</span><span class=\"p\">(</span><span class=\"n\">q_</span><span class=\"p\">,</span> <span class=\"n\">alpha</span><span class=\"p\">)</span>\n",
+       "                        <span class=\"k\">if</span> <span class=\"n\">phi</span> <span class=\"ow\">is</span> <span class=\"ow\">not</span> <span class=\"bp\">None</span><span class=\"p\">:</span>\n",
+       "                            <span class=\"k\">yield</span> <span class=\"n\">phi</span>\n",
+       "        <span class=\"k\">if</span> <span class=\"ow\">not</span> <span class=\"n\">new</span><span class=\"p\">:</span>\n",
+       "            <span class=\"k\">break</span>\n",
+       "        <span class=\"k\">for</span> <span class=\"n\">clause</span> <span class=\"ow\">in</span> <span class=\"n\">new</span><span class=\"p\">:</span>\n",
+       "            <span class=\"n\">kb</span><span class=\"o\">.</span><span class=\"n\">tell</span><span class=\"p\">(</span><span class=\"n\">clause</span><span class=\"p\">)</span>\n",
+       "    <span class=\"k\">return</span> <span class=\"bp\">None</span>\n",
+       "</pre></div>\n",
+       "</body>\n",
+       "</html>\n"
+      ],
+      "text/plain": [
+       "<IPython.core.display.HTML object>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "psource(fol_fc_ask)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "crime_kb = FolKB(clauses)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[{x: West}]\n"
+     ]
+    }
+   ],
+   "source": [
+    "answer = fol_fc_ask(crime_kb, expr('Criminal(x)'))\n",
+    "print(list(answer))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Let's find out all the hostile nations. Note that we only told the `KB` that Nono was an enemy of America, not that it was hostile."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[{x: Nono}]\n"
+     ]
+    }
+   ],
+   "source": [
+    "answer = fol_fc_ask(crime_kb, expr('Hostile(x)'))\n",
+    "print(list(answer))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The generator returned a single substitution which says that Nono is a hostile nation. See how after adding another enemy nation the generator returns two substitutions."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[{x: Nono}, {x: JaJa}]\n"
+     ]
+    }
+   ],
+   "source": [
+    "crime_kb.tell(expr('Enemy(JaJa, America)'))\n",
+    "answer = fol_fc_ask(crime_kb, expr('Hostile(x)'))\n",
+    "print(list(answer))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<strong><em>Note</em>:</strong> `fol_fc_ask` makes changes to the `KB` by adding sentences to it."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Backward Chaining Algorithm\n",
+    "This algorithm works backward from the goal, chaining through rules to find known facts that support the proof. Suppose `goal` is the query we want to find the substitution for. We find rules of the form $\\text{lhs} \\implies \\text{goal}$ in the `KB` and try to prove `lhs`. There may be multiple clauses in the `KB` which give multiple `lhs`. It is sufficient to prove only one of these. But to prove a `lhs` all the conjuncts in the `lhs` of the clause must be proved. This makes it similar to <em>And/Or</em> search."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### OR\n",
+    "The <em>OR</em> part of the algorithm comes from our choice to select any clause of the form $\\text{lhs} \\implies \\text{goal}$. Looking at all rules's `lhs` whose `rhs` unify with the `goal`, we yield a substitution which proves all the conjuncts in the `lhs`. We use `parse_definite_clause` to attain `lhs` and `rhs` from a clause of the form $\\text{lhs} \\implies \\text{rhs}$. For atomic facts the `lhs` is an empty list."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\"\n",
+       "   \"http://www.w3.org/TR/html4/strict.dtd\">\n",
+       "<!--\n",
+       "generated by Pygments <http://pygments.org>\n",
+       "Copyright 2006-2019 by the Pygments team.\n",
+       "Licensed under the BSD license, see LICENSE for details.\n",
+       "-->\n",
+       "<html>\n",
+       "<head>\n",
+       "  <title></title>\n",
+       "  <meta http-equiv=\"content-type\" content=\"text/html; charset=None\">\n",
+       "  <style type=\"text/css\">\n",
+       "/*\n",
+       "generated by Pygments <http://pygments.org>\n",
+       "Copyright 2006-2019 by the Pygments team.\n",
+       "Licensed under the BSD license, see LICENSE for details.\n",
+       "*/\n",
+       "td.linenos { background-color: #f0f0f0; padding-right: 10px; }\n",
+       "span.lineno { background-color: #f0f0f0; padding: 0 5px 0 5px; }\n",
+       "pre { line-height: 125%; }\n",
+       "body .hll { background-color: #ffffcc }\n",
+       "body  { background: #f8f8f8; }\n",
+       "body .c { color: #408080; font-style: italic } /* Comment */\n",
+       "body .err { border: 1px solid #FF0000 } /* Error */\n",
+       "body .k { color: #008000; font-weight: bold } /* Keyword */\n",
+       "body .o { color: #666666 } /* Operator */\n",
+       "body .ch { color: #408080; font-style: italic } /* Comment.Hashbang */\n",
+       "body .cm { color: #408080; font-style: italic } /* Comment.Multiline */\n",
+       "body .cp { color: #BC7A00 } /* Comment.Preproc */\n",
+       "body .cpf { color: #408080; font-style: italic } /* Comment.PreprocFile */\n",
+       "body .c1 { color: #408080; font-style: italic } /* Comment.Single */\n",
+       "body .cs { color: #408080; font-style: italic } /* Comment.Special */\n",
+       "body .gd { color: #A00000 } /* Generic.Deleted */\n",
+       "body .ge { font-style: italic } /* Generic.Emph */\n",
+       "body .gr { color: #FF0000 } /* Generic.Error */\n",
+       "body .gh { color: #000080; font-weight: bold } /* Generic.Heading */\n",
+       "body .gi { color: #00A000 } /* Generic.Inserted */\n",
+       "body .go { color: #888888 } /* Generic.Output */\n",
+       "body .gp { color: #000080; font-weight: bold } /* Generic.Prompt */\n",
+       "body .gs { font-weight: bold } /* Generic.Strong */\n",
+       "body .gu { color: #800080; font-weight: bold } /* Generic.Subheading */\n",
+       "body .gt { color: #0044DD } /* Generic.Traceback */\n",
+       "body .kc { color: #008000; font-weight: bold } /* Keyword.Constant */\n",
+       "body .kd { color: #008000; font-weight: bold } /* Keyword.Declaration */\n",
+       "body .kn { color: #008000; font-weight: bold } /* Keyword.Namespace */\n",
+       "body .kp { color: #008000 } /* Keyword.Pseudo */\n",
+       "body .kr { color: #008000; font-weight: bold } /* Keyword.Reserved */\n",
+       "body .kt { color: #B00040 } /* Keyword.Type */\n",
+       "body .m { color: #666666 } /* Literal.Number */\n",
+       "body .s { color: #BA2121 } /* Literal.String */\n",
+       "body .na { color: #7D9029 } /* Name.Attribute */\n",
+       "body .nb { color: #008000 } /* Name.Builtin */\n",
+       "body .nc { color: #0000FF; font-weight: bold } /* Name.Class */\n",
+       "body .no { color: #880000 } /* Name.Constant */\n",
+       "body .nd { color: #AA22FF } /* Name.Decorator */\n",
+       "body .ni { color: #999999; font-weight: bold } /* Name.Entity */\n",
+       "body .ne { color: #D2413A; font-weight: bold } /* Name.Exception */\n",
+       "body .nf { color: #0000FF } /* Name.Function */\n",
+       "body .nl { color: #A0A000 } /* Name.Label */\n",
+       "body .nn { color: #0000FF; font-weight: bold } /* Name.Namespace */\n",
+       "body .nt { color: #008000; font-weight: bold } /* Name.Tag */\n",
+       "body .nv { color: #19177C } /* Name.Variable */\n",
+       "body .ow { color: #AA22FF; font-weight: bold } /* Operator.Word */\n",
+       "body .w { color: #bbbbbb } /* Text.Whitespace */\n",
+       "body .mb { color: #666666 } /* Literal.Number.Bin */\n",
+       "body .mf { color: #666666 } /* Literal.Number.Float */\n",
+       "body .mh { color: #666666 } /* Literal.Number.Hex */\n",
+       "body .mi { color: #666666 } /* Literal.Number.Integer */\n",
+       "body .mo { color: #666666 } /* Literal.Number.Oct */\n",
+       "body .sa { color: #BA2121 } /* Literal.String.Affix */\n",
+       "body .sb { color: #BA2121 } /* Literal.String.Backtick */\n",
+       "body .sc { color: #BA2121 } /* Literal.String.Char */\n",
+       "body .dl { color: #BA2121 } /* Literal.String.Delimiter */\n",
+       "body .sd { color: #BA2121; font-style: italic } /* Literal.String.Doc */\n",
+       "body .s2 { color: #BA2121 } /* Literal.String.Double */\n",
+       "body .se { color: #BB6622; font-weight: bold } /* Literal.String.Escape */\n",
+       "body .sh { color: #BA2121 } /* Literal.String.Heredoc */\n",
+       "body .si { color: #BB6688; font-weight: bold } /* Literal.String.Interpol */\n",
+       "body .sx { color: #008000 } /* Literal.String.Other */\n",
+       "body .sr { color: #BB6688 } /* Literal.String.Regex */\n",
+       "body .s1 { color: #BA2121 } /* Literal.String.Single */\n",
+       "body .ss { color: #19177C } /* Literal.String.Symbol */\n",
+       "body .bp { color: #008000 } /* Name.Builtin.Pseudo */\n",
+       "body .fm { color: #0000FF } /* Name.Function.Magic */\n",
+       "body .vc { color: #19177C } /* Name.Variable.Class */\n",
+       "body .vg { color: #19177C } /* Name.Variable.Global */\n",
+       "body .vi { color: #19177C } /* Name.Variable.Instance */\n",
+       "body .vm { color: #19177C } /* Name.Variable.Magic */\n",
+       "body .il { color: #666666 } /* Literal.Number.Integer.Long */\n",
+       "\n",
+       "  </style>\n",
+       "</head>\n",
+       "<body>\n",
+       "<h2></h2>\n",
+       "\n",
+       "<div class=\"highlight\"><pre><span></span><span class=\"k\">def</span> <span class=\"nf\">fol_bc_or</span><span class=\"p\">(</span><span class=\"n\">kb</span><span class=\"p\">,</span> <span class=\"n\">goal</span><span class=\"p\">,</span> <span class=\"n\">theta</span><span class=\"p\">):</span>\n",
+       "    <span class=\"k\">for</span> <span class=\"n\">rule</span> <span class=\"ow\">in</span> <span class=\"n\">kb</span><span class=\"o\">.</span><span class=\"n\">fetch_rules_for_goal</span><span class=\"p\">(</span><span class=\"n\">goal</span><span class=\"p\">):</span>\n",
+       "        <span class=\"n\">lhs</span><span class=\"p\">,</span> <span class=\"n\">rhs</span> <span class=\"o\">=</span> <span class=\"n\">parse_definite_clause</span><span class=\"p\">(</span><span class=\"n\">standardize_variables</span><span class=\"p\">(</span><span class=\"n\">rule</span><span class=\"p\">))</span>\n",
+       "        <span class=\"k\">for</span> <span class=\"n\">theta1</span> <span class=\"ow\">in</span> <span class=\"n\">fol_bc_and</span><span class=\"p\">(</span><span class=\"n\">kb</span><span class=\"p\">,</span> <span class=\"n\">lhs</span><span class=\"p\">,</span> <span class=\"n\">unify_mm</span><span class=\"p\">(</span><span class=\"n\">rhs</span><span class=\"p\">,</span> <span class=\"n\">goal</span><span class=\"p\">,</span> <span class=\"n\">theta</span><span class=\"p\">)):</span>\n",
+       "            <span class=\"k\">yield</span> <span class=\"n\">theta1</span>\n",
+       "</pre></div>\n",
+       "</body>\n",
+       "</html>\n"
+      ],
+      "text/plain": [
+       "<IPython.core.display.HTML object>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "psource(fol_bc_or)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### AND\n",
+    "The <em>AND</em> corresponds to proving all the conjuncts in the `lhs`. We need to find a substitution which proves each <em>and</em> every clause in the list of conjuncts."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\"\n",
+       "   \"http://www.w3.org/TR/html4/strict.dtd\">\n",
+       "<!--\n",
+       "generated by Pygments <http://pygments.org>\n",
+       "Copyright 2006-2019 by the Pygments team.\n",
+       "Licensed under the BSD license, see LICENSE for details.\n",
+       "-->\n",
+       "<html>\n",
+       "<head>\n",
+       "  <title></title>\n",
+       "  <meta http-equiv=\"content-type\" content=\"text/html; charset=None\">\n",
+       "  <style type=\"text/css\">\n",
+       "/*\n",
+       "generated by Pygments <http://pygments.org>\n",
+       "Copyright 2006-2019 by the Pygments team.\n",
+       "Licensed under the BSD license, see LICENSE for details.\n",
+       "*/\n",
+       "td.linenos { background-color: #f0f0f0; padding-right: 10px; }\n",
+       "span.lineno { background-color: #f0f0f0; padding: 0 5px 0 5px; }\n",
+       "pre { line-height: 125%; }\n",
+       "body .hll { background-color: #ffffcc }\n",
+       "body  { background: #f8f8f8; }\n",
+       "body .c { color: #408080; font-style: italic } /* Comment */\n",
+       "body .err { border: 1px solid #FF0000 } /* Error */\n",
+       "body .k { color: #008000; font-weight: bold } /* Keyword */\n",
+       "body .o { color: #666666 } /* Operator */\n",
+       "body .ch { color: #408080; font-style: italic } /* Comment.Hashbang */\n",
+       "body .cm { color: #408080; font-style: italic } /* Comment.Multiline */\n",
+       "body .cp { color: #BC7A00 } /* Comment.Preproc */\n",
+       "body .cpf { color: #408080; font-style: italic } /* Comment.PreprocFile */\n",
+       "body .c1 { color: #408080; font-style: italic } /* Comment.Single */\n",
+       "body .cs { color: #408080; font-style: italic } /* Comment.Special */\n",
+       "body .gd { color: #A00000 } /* Generic.Deleted */\n",
+       "body .ge { font-style: italic } /* Generic.Emph */\n",
+       "body .gr { color: #FF0000 } /* Generic.Error */\n",
+       "body .gh { color: #000080; font-weight: bold } /* Generic.Heading */\n",
+       "body .gi { color: #00A000 } /* Generic.Inserted */\n",
+       "body .go { color: #888888 } /* Generic.Output */\n",
+       "body .gp { color: #000080; font-weight: bold } /* Generic.Prompt */\n",
+       "body .gs { font-weight: bold } /* Generic.Strong */\n",
+       "body .gu { color: #800080; font-weight: bold } /* Generic.Subheading */\n",
+       "body .gt { color: #0044DD } /* Generic.Traceback */\n",
+       "body .kc { color: #008000; font-weight: bold } /* Keyword.Constant */\n",
+       "body .kd { color: #008000; font-weight: bold } /* Keyword.Declaration */\n",
+       "body .kn { color: #008000; font-weight: bold } /* Keyword.Namespace */\n",
+       "body .kp { color: #008000 } /* Keyword.Pseudo */\n",
+       "body .kr { color: #008000; font-weight: bold } /* Keyword.Reserved */\n",
+       "body .kt { color: #B00040 } /* Keyword.Type */\n",
+       "body .m { color: #666666 } /* Literal.Number */\n",
+       "body .s { color: #BA2121 } /* Literal.String */\n",
+       "body .na { color: #7D9029 } /* Name.Attribute */\n",
+       "body .nb { color: #008000 } /* Name.Builtin */\n",
+       "body .nc { color: #0000FF; font-weight: bold } /* Name.Class */\n",
+       "body .no { color: #880000 } /* Name.Constant */\n",
+       "body .nd { color: #AA22FF } /* Name.Decorator */\n",
+       "body .ni { color: #999999; font-weight: bold } /* Name.Entity */\n",
+       "body .ne { color: #D2413A; font-weight: bold } /* Name.Exception */\n",
+       "body .nf { color: #0000FF } /* Name.Function */\n",
+       "body .nl { color: #A0A000 } /* Name.Label */\n",
+       "body .nn { color: #0000FF; font-weight: bold } /* Name.Namespace */\n",
+       "body .nt { color: #008000; font-weight: bold } /* Name.Tag */\n",
+       "body .nv { color: #19177C } /* Name.Variable */\n",
+       "body .ow { color: #AA22FF; font-weight: bold } /* Operator.Word */\n",
+       "body .w { color: #bbbbbb } /* Text.Whitespace */\n",
+       "body .mb { color: #666666 } /* Literal.Number.Bin */\n",
+       "body .mf { color: #666666 } /* Literal.Number.Float */\n",
+       "body .mh { color: #666666 } /* Literal.Number.Hex */\n",
+       "body .mi { color: #666666 } /* Literal.Number.Integer */\n",
+       "body .mo { color: #666666 } /* Literal.Number.Oct */\n",
+       "body .sa { color: #BA2121 } /* Literal.String.Affix */\n",
+       "body .sb { color: #BA2121 } /* Literal.String.Backtick */\n",
+       "body .sc { color: #BA2121 } /* Literal.String.Char */\n",
+       "body .dl { color: #BA2121 } /* Literal.String.Delimiter */\n",
+       "body .sd { color: #BA2121; font-style: italic } /* Literal.String.Doc */\n",
+       "body .s2 { color: #BA2121 } /* Literal.String.Double */\n",
+       "body .se { color: #BB6622; font-weight: bold } /* Literal.String.Escape */\n",
+       "body .sh { color: #BA2121 } /* Literal.String.Heredoc */\n",
+       "body .si { color: #BB6688; font-weight: bold } /* Literal.String.Interpol */\n",
+       "body .sx { color: #008000 } /* Literal.String.Other */\n",
+       "body .sr { color: #BB6688 } /* Literal.String.Regex */\n",
+       "body .s1 { color: #BA2121 } /* Literal.String.Single */\n",
+       "body .ss { color: #19177C } /* Literal.String.Symbol */\n",
+       "body .bp { color: #008000 } /* Name.Builtin.Pseudo */\n",
+       "body .fm { color: #0000FF } /* Name.Function.Magic */\n",
+       "body .vc { color: #19177C } /* Name.Variable.Class */\n",
+       "body .vg { color: #19177C } /* Name.Variable.Global */\n",
+       "body .vi { color: #19177C } /* Name.Variable.Instance */\n",
+       "body .vm { color: #19177C } /* Name.Variable.Magic */\n",
+       "body .il { color: #666666 } /* Literal.Number.Integer.Long */\n",
+       "\n",
+       "  </style>\n",
+       "</head>\n",
+       "<body>\n",
+       "<h2></h2>\n",
+       "\n",
+       "<div class=\"highlight\"><pre><span></span><span class=\"k\">def</span> <span class=\"nf\">fol_bc_and</span><span class=\"p\">(</span><span class=\"n\">kb</span><span class=\"p\">,</span> <span class=\"n\">goals</span><span class=\"p\">,</span> <span class=\"n\">theta</span><span class=\"p\">):</span>\n",
+       "    <span class=\"k\">if</span> <span class=\"n\">theta</span> <span class=\"ow\">is</span> <span class=\"bp\">None</span><span class=\"p\">:</span>\n",
+       "        <span class=\"k\">pass</span>\n",
+       "    <span class=\"k\">elif</span> <span class=\"ow\">not</span> <span class=\"n\">goals</span><span class=\"p\">:</span>\n",
+       "        <span class=\"k\">yield</span> <span class=\"n\">theta</span>\n",
+       "    <span class=\"k\">else</span><span class=\"p\">:</span>\n",
+       "        <span class=\"n\">first</span><span class=\"p\">,</span> <span class=\"n\">rest</span> <span class=\"o\">=</span> <span class=\"n\">goals</span><span class=\"p\">[</span><span class=\"mi\">0</span><span class=\"p\">],</span> <span class=\"n\">goals</span><span class=\"p\">[</span><span class=\"mi\">1</span><span class=\"p\">:]</span>\n",
+       "        <span class=\"k\">for</span> <span class=\"n\">theta1</span> <span class=\"ow\">in</span> <span class=\"n\">fol_bc_or</span><span class=\"p\">(</span><span class=\"n\">kb</span><span class=\"p\">,</span> <span class=\"n\">subst</span><span class=\"p\">(</span><span class=\"n\">theta</span><span class=\"p\">,</span> <span class=\"n\">first</span><span class=\"p\">),</span> <span class=\"n\">theta</span><span class=\"p\">):</span>\n",
+       "            <span class=\"k\">for</span> <span class=\"n\">theta2</span> <span class=\"ow\">in</span> <span class=\"n\">fol_bc_and</span><span class=\"p\">(</span><span class=\"n\">kb</span><span class=\"p\">,</span> <span class=\"n\">rest</span><span class=\"p\">,</span> <span class=\"n\">theta1</span><span class=\"p\">):</span>\n",
+       "                <span class=\"k\">yield</span> <span class=\"n\">theta2</span>\n",
+       "</pre></div>\n",
+       "</body>\n",
+       "</html>\n"
+      ],
+      "text/plain": [
+       "<IPython.core.display.HTML object>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "psource(fol_bc_and)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now the main function `fl_bc_ask` calls `fol_bc_or` with substitution initialized as empty. The `ask` method of `FolKB` uses `fol_bc_ask` and fetches the first substitution returned by the generator to answer query. Let's query the knowledge base we created from `clauses` to find hostile nations."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Rebuild KB because running fol_fc_ask would add new facts to the KB\n",
+    "crime_kb = FolKB(clauses)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "{v_5: Nono, x: Nono}"
+      ]
+     },
+     "execution_count": 25,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "crime_kb.ask(expr('Hostile(x)'))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "You may notice some new variables in the substitution. They are introduced to standardize the variable names to prevent naming problems as discussed in the [Unification section](#Unification)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Authors\n",
+    "\n",
+    "This notebook by [Chirag Vartak](https://github.com/chiragvartak) and [Peter Norvig](https://github.com/norvig).\n",
+    "\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.6.9"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
